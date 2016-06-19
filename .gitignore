@@ -2,3 +2,5 @@
 *~
 # no .gch
 *.gch
+# no .swp
+*.swp

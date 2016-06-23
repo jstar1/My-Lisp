@@ -6,6 +6,36 @@
 #include "mpc.h" //link to the mpc library  NOTE i am using "" because i am searching the local directory for this header file
 
 
+/* Declare New lval struct */
+/* lval stands for Lisp Value */
+typedef struct{
+	int type;
+	long num;
+	int err;
+} lval;
+
+/* Create Enumeration of Possible lval Types */
+enum {LVAL_NUM, LVAL_ERR};
+
+/* Create Enumeration of Possible Error Types */
+enum {LERR_DIV_ZERO, LERR_BAD_OP, LERR, lERR_BAD_NUM};
+
+/* Creating a new number type lval*/
+lval lval_num(long x){
+	lval v;
+	v.type = LVAL_NUM;
+	v.num = x;
+	return v;
+}
+
+/* Create a new error type lval */
+lval lval_err(int x){
+	lval v;
+	v.type = LVAL_ERR;
+	v.err = x;
+	return v;
+}
+
 /* Defining eval_op, test for which operator is passed in and performs the C operation on input */
 long eval_op(long x, char *op, long y){
 	
@@ -16,7 +46,8 @@ long eval_op(long x, char *op, long y){
 	if(strcmp(op, "*") == 0) {return x * y;}
 
 	if(strcmp(op, "/") == 0) {return x / y;}
-
+	
+	if(strcmp(op, "%") == 0) {return x % y;}
 	return 0;
 }
 

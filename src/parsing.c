@@ -187,6 +187,46 @@ void lval_print(lval *v){
 /* Print an "lval" followed by a newline */
 void lval_println(lval *v) {lval_print(v); putchar('\n');}
 
+/*Function to evaluate nodes in the tree*/
+lval *lval_eval_sexpr(lval *v){
+
+	/* Evaluate Children */
+	for (int i = 0; i < v -> count; ++i)
+	{
+		v -> cell[i] = lval_eval(v -> cell[i]);
+	}
+
+	/*Error Checking */
+	for (int i = 0; i < v -> count; ++i)
+	{
+		if (v -> cell[i] -> type == LVAL_ERR)
+		{
+			return lval_tale(v, i);
+		}
+	}
+
+	/* Empty Expression */
+	if (v -> count ==0) {return v;}
+
+	/* Single Expression */
+	if (v -> count ==1) {return lval_take(v,0);}
+
+	/*Ensure First Element is Symbol*/
+	lval *f = lval_pop(v, 0);
+	if(f -> type != LVAL_SYM)
+	{
+		lval_def(f);
+		lval_del(v);
+		return lval_err("S-expression Does not start with symbol!");
+	}
+
+	/* Call builtin with operator */
+	lval *result = builtin_op(v, f -> sym);
+	lval_def(f);
+	return result;
+}
+
+
 /* Defining eval_op, test for which operator is passed in and performs the C operation on input */
 //lval eval_op(lval x, char *op, lval y){
 //

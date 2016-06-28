@@ -5,6 +5,9 @@
 #include <editline/history.h>
 #include "mpc.h" //link to the mpc library  NOTE i am using "" because i am searching the local directory for this header file
 
+/* Macro used to help with error checking */
+#define LASSERT(args, cond, err) \
+	if (!(cond)) {lval_del(args); return lval_err(err);}
 
 /* Create Enumeration of Possible lval Types */
 enum {LVAL_ERR,LVAL_NUM,LVAL_SYM,LVAL_SEXPR, LVAL_QEXPR};
@@ -255,62 +258,110 @@ lval *builtin_op(lval *a, char *op)
 }
 
 lval *builtin_head(lval *a){
-
-	/* Check Error Conditions */
-	if (a -> count != 1)
-	{
-		lval_del(a);
-		return lval_err("Function 'head' passed too many arguments!");
-	}
 	
-	if (a -> cell[0] -> type != LVAL_QEXPR)
-	{
-		lval_del(a);
-		return lval_err("Function 'head' passed incorrect types!");
-	}
+	LASSERT(a, a -> count == 1, "Function 'head' passed too many arguments!");
+
+	LASSERT(a, a -> cell[0] -> type == LVAL_QEXPR, "Function 'head' passed incorrect type!");
 	
-	if (a -> cell[0] -> count == 0)
-	{
-		lval_del(a);
-		return lval_err("Function 'head' passed {}!");
-	}
+	LASSERT(a, a -> cell[0] -> count != 0, "Function 'head' passed {}!");
 
-	/* Otherwise take first argument */
-	lval *v = lval_take(a, 0);
-
-	/* Delete all elements that are not head and return */
+	lval *v = lval_take(a, 0);	
 	while (v -> count > 1) {lval_del(lval_pop(v,1));}
+	
 	return v;
 }
 
 lval *builtin_tail(lval *a){
+
+	LASSERT(a, a -> count == 1, "Function 'tail' passed too many arguments!");	
 	
-	/* Check Error Conditions */
-	if (a ->count != 1)
-	{
-		lval_del(a);
-		return lval_err("Function 'tail' passed too many arguments!");
-	}
+	LASSERT(a, a -> cell[0] -> type == LVAL_QEXPR, "Function 'tail' passed incorrect type!");
 
-	if (a ->cell[0] -> type != LVAL_QEXPR)
-	{
-		lval_del(a);
-		return lval_err("Function 'tail' passed incorrect types!");
-	}
+	LASSERT(a, a -> cell[0] -> count != 0, "Function 'tail' passed {}!");
 
-	if ( a -> cell[0] -> count == 0)
-	{
-		lval_del(a);
-		return lval_err("Function ''tail passed {}!");
-	}
 
 	/* Take first argument */
 	lval *v = lval_take(a, 0);
 
 	/* Delete first element and return */
 	lval_del(lval_pop(v,0));
+	
 	return v;
 }
+
+/* Takes in a Q-Expression input and converts it to an S-Expression an
+ * evaluates u sing lval_eval
+ */
+lval *builtin_list(lval *a)
+{
+	a -> type = LVAL_QEXPR;
+	
+	return a;
+}
+
+lval *builtin_eval(lval *a)
+{
+	LASSERT(a, a -> count == 1, "Function 'eval' passed too many arguments!");
+
+	LASSERT(a, a -> cell[0] -> type == LVAL_QEXPR,"Function 'eval' passed incorrect type!");
+
+	lval *x = lval_take(a, 0);
+
+	x -> type = LVAL_SEXPR;
+
+	return lval_eval(x);
+}
+
+lval *lval_join(lval *x, lval *y){
+
+	/* For each cell in 'y' add it to 'x' */
+	while(y -> count)
+	{
+		x = lval_add(x, lval_pop(y, 0));
+	}
+
+	/* Delete the empty 'y' and reutnr 'x' */
+	lval_del(y);
+	
+	return x;
+}
+
+/* Check all arguments are Q-Expressions and then we join them togeter one by one
+ *
+ */
+lval *builtin_join(lval *a){
+
+	for (int i = 0; i < a-> count; ++i)
+	{
+		LASSERT(a, a -> cell[i] -> type == LVAL_QEXPR,
+		"Function 'join' passed incorrect type.");
+	}
+
+	lval *x = lval_pop(a,0);
+
+	while (a -> count)
+	{
+		x = lval_join(x, lval_pop(a,0));
+	}
+
+	lval_del(a);
+
+	return x;
+}
+
+/* Function used to call the correct builtin function depnding on t he symbol it encounters */
+lval *builtin(lval *a, char *func){
+	
+	if(strcmp("list", func) == 0) {return builtin_list(a);}
+	if(strcmp("head", func) == 0) {return builtin_head(a);}
+	if(strcmp("tail", func) == 0) {return builtin_tail(a);}
+	if(strcmp("join", func) == 0) {return builtin_join(a);}
+	if(strcmp("eval", func) == 0) {return builtin_eval(a);}
+	if(strstr("+-/*", func)) {return builtin_op(a,func);}
+	lval_del(a);
+	return lval_err("Unknown Function!");
+}
+
 /*Function to evaluate nodes in the tree*/
 lval *lval_eval_sexpr(lval *v){
 
@@ -345,7 +396,7 @@ lval *lval_eval_sexpr(lval *v){
 	}
 
 	/* Call builtin with operator */
-	lval *result = builtin_op(v, f -> sym);
+	lval *result = builtin(v, f -> sym);
 	lval_del(f);
 	return result;
 }

@@ -38,8 +38,12 @@ struct lval{
 	lval **cell;
 };
 
-/* Create Enumeration of Possible Error Types */
-//enum {LERR_DIV_ZERO, LERR_BAD_OP, LERR, LERR_BAD_NUM};
+/* Declaring a lenv struct */
+struct lenv{
+	int count;
+	char ** syms;
+	lval **vals;
+};
 
 /* Creating a new number type lval*/
 lval *lval_num(long x){
@@ -170,7 +174,7 @@ lval *lval_read(mpc_ast_t* t){
 void lval_print(lval* v);
 
 /*Forward declartion*/
-lval *lval_eval(lval *v);
+lval *lval_eval(lenv *e, lval *v);
 
 /* function to print out S-Expressions*/
 /* This function loops over all sub expression of an expression and prints with spaces */
@@ -274,7 +278,73 @@ lval *lval_take(lval *v, int i)
 	return x;
 }
 
-lval *builtin_op(lval *a, char *op)
+/* Create new lenv */
+lenv *lenv_new(void){
+	lenv *e = malloc(sizeof(lenv));
+	e -> count = 0;
+	e -> syms = NULL;
+	e -> vals = NULL;
+	return e;
+}
+
+/* Delete lenv */
+void lenv_del(lenv *e){
+	for(int i = 0; i < e -> count; ++i)
+	{
+		free(e -> syms[i]);
+		lval_del(e -> vals[i]);
+	}
+	free(e -> syms);
+	free(e -> vals);
+	free(e);
+}
+
+/*Function to get the data*/
+lval *lenv_get(lenv *e, lval *k){
+
+	/* Iterate over all items in environment */
+	for(int i = 0; i < e -> count; ++i)
+	{
+		/* Check if the stored string matches t he symbol string */
+		/* If it does, return a copy of the value */
+		if(strcmp(e -> syms[i], k -> sym) == 0)
+		{
+			return lval_copy(e -> vals[i]);
+		}
+	}
+	/* if no symbol found return error */
+	return lval_err("unbound symbol!");
+}
+
+void lenv_put(lenv *e, lval *k, lval *v){
+
+	/* Iterate over all items in environment */
+	/* This is to see if variable already exists */
+	for(int i = 0; i < e -> count; ++i)
+	{
+		/* If variable is found delete item at that position */
+		/* And replace with variable supplied by user */
+		if(strcmp(e -> syms[i], k -> sym) == 0) 
+		{
+			lval_del(e -> vals[i]);
+			e -> vals[i] = lval_copy(v);
+			return;
+		}
+	}
+
+	/* If no existing entry found allocated space for new entry */
+	e -> count++;
+	e -> vals = realloc(e -> vals, sizeof(lval*) * e -> count);
+	e -> syms = realloc(e -> syms, sizeof(char*) * e -> count);
+
+	/* COpy contents of lval and symbol string into new location */
+	e -> vals[e -> count - 1] = lval_copy(v);
+	e -> syms[e -> count - 1] = malloc(strlen(k -> sym) + 1);
+	strcpy(e -> syms[e -> count - 1], k -> sym);
+}
+
+
+lval *builtin_op(lenv *e, lval *a, char *op)
 {
 	/* Ensure all arguments are numbers */
 	for (int i =0; i < a -> count; ++i)
@@ -319,7 +389,7 @@ lval *builtin_op(lval *a, char *op)
 	lval_del(a); return x;
 }
 
-lval *builtin_head(lval *a){
+lval *builtin_head(lenv *e, lval *a){
 	
 	LASSERT(a, a -> count == 1, "Function 'head' passed too many arguments!");
 
@@ -333,7 +403,7 @@ lval *builtin_head(lval *a){
 	return v;
 }
 
-lval *builtin_tail(lval *a){
+lval *builtin_tail( lenv *e, lval *a){
 
 	LASSERT(a, a -> count == 1, "Function 'tail' passed too many arguments!");	
 	
@@ -354,14 +424,14 @@ lval *builtin_tail(lval *a){
 /* Takes in a Q-Expression input and converts it to an S-Expression an
  * evaluates u sing lval_eval
  */
-lval *builtin_list(lval *a)
+lval *builtin_list(lenv *e, lval *a)
 {
 	a -> type = LVAL_QEXPR;
 	
 	return a;
 }
 
-lval *builtin_eval(lval *a)
+lval *builtin_eval(lenv *e, lval *a)
 {
 	LASSERT(a, a -> count == 1, "Function 'eval' passed too many arguments!");
 
@@ -371,7 +441,7 @@ lval *builtin_eval(lval *a)
 
 	x -> type = LVAL_SEXPR;
 
-	return lval_eval(x);
+	return lval_eval(e, x);
 }
 
 lval *lval_join(lval *x, lval *y){
@@ -391,7 +461,7 @@ lval *lval_join(lval *x, lval *y){
 /* Check all arguments are Q-Expressions and then we join them togeter one by one
  *
  */
-lval *builtin_join(lval *a){
+lval *builtin_join(lenv *e, lval *a){
 
 	for (int i = 0; i < a-> count; ++i)
 	{
@@ -412,25 +482,57 @@ lval *builtin_join(lval *a){
 }
 
 /* Function used to call the correct builtin function depnding on t he symbol it encounters */
-lval *builtin(lval *a, char *func){
+lval *builtin(lenv *e,lval *a, char *func){
 	
-	if(strcmp("list", func) == 0) {return builtin_list(a);}
-	if(strcmp("head", func) == 0) {return builtin_head(a);}
-	if(strcmp("tail", func) == 0) {return builtin_tail(a);}
-	if(strcmp("join", func) == 0) {return builtin_join(a);}
-	if(strcmp("eval", func) == 0) {return builtin_eval(a);}
-	if(strstr("+-/*", func)) {return builtin_op(a,func);}
+	if(strcmp("list", func) == 0) {return builtin_list(e, a);}
+	if(strcmp("head", func) == 0) {return builtin_head(e, a);}
+	if(strcmp("tail", func) == 0) {return builtin_tail(e, a);}
+	if(strcmp("join", func) == 0) {return builtin_join(e, a);}
+	if(strcmp("eval", func) == 0) {return builtin_eval(e ,a);}
+	if(strstr("+-/*", func)) {return builtin_op(e, a, func);}
 	lval_del(a);
 	return lval_err("Unknown Function!");
 }
 
+/*Functions to define separate builtins for each of maths functions for language supports*/
+lval *builtin_add(lenv *e, lval *a){return builtin_op(e, a, "+");}
+lval *builtin_sub(lenv *e, lval *a){return builtin_op(e, a, "-");}
+lval *builtin_mul(lenv * e, lval *a){return builtin_op(e, a, "*");}
+lval *builtin_div(lenv * e, lval *a){return builtin_op(e, a , "/");}
+
+/*Register built ins*/
+void lenv_add_builtin(lenv *e, char *name, lbuiltin func){
+	lval *k = lval_sym(name);
+	lval *v = lval_fun(func);
+	lenv_put(e, k, v);
+	lval_del(k); 
+	lval_del(v);
+}
+
+void lenv_add_builtins(lenv *e){
+	
+	/*List Functions */
+	lenv_add_builtin(e, "list", builtin_list);
+	lenv_add_builtin(e, "head", builtin_head);
+	lenv_add_builtin(e, "tail", builtin_tail);
+	lenv_add_builtin(e, "eval", builtin_eval);
+	lenv_add_builtin(e, "join", builtin_join);
+
+	/* Mathematical Functions */
+	lenv_add_builtin(e, "+", builtin_add);
+	lenv_add_builtin(e, "-", builtin_sub);
+	lenv_add_builtin(e, "*", builtin_mul);
+	lenv_add_builtin(e, "/", builtin_div);
+}
+
+
 /*Function to evaluate nodes in the tree*/
-lval *lval_eval_sexpr(lval *v){
+lval *lval_eval_sexpr(lenv *e,lval *v){
 
 	/* Evaluate Children */
 	for (int i = 0; i < v -> count; ++i)
 	{
-		v -> cell[i] = lval_eval(v -> cell[i]);
+		v -> cell[i] = lval_eval(e, v -> cell[i]);
 	}
 
 	/*Error Checking */
@@ -448,25 +550,31 @@ lval *lval_eval_sexpr(lval *v){
 	/* Single Expression */
 	if (v -> count == 1) {return lval_take(v,0);}
 
-	/*Ensure First Element is Symbol*/
+	/*Ensure First Element is a f unction a fter evaluation*/
 	lval *f = lval_pop(v, 0);
-	if(f -> type != LVAL_SYM)
+	if(f -> type != LVAL_FUN)
 	{
 		lval_del(f);
 		lval_del(v);
-		return lval_err("S-expression Does not start with symbol!");
+		return lval_err("first element is not a function");
 	}
 
-	/* Call builtin with operator */
-	lval *result = builtin(v, f -> sym);
+	/* If so call function to get result */
+	lval *result = f -> fun(e, v);
 	lval_del(f);
 	return result;
 }
 
-lval *lval_eval(lval *v)
+lval *lval_eval(lenv *e,lval *v)
 {
+	if(v -> type == LVAL_SYM)
+	{
+		lval *x = lenv_get(e, v);
+		lval_del(v);
+		return x;
+	}
 	/* Evaluate Sexpression */
-	if(v -> type == LVAL_SEXPR) {return lval_eval_sexpr(v);}
+	if(v -> type == LVAL_SEXPR) {return lval_eval_sexpr(e, v);}
 
 	/* All other lval types remain the same*/
 	return v;
@@ -509,6 +617,9 @@ int main(int argc, char ** argv)
 	puts("Lispy Version 0.1");
 	puts("Press Ctrl+c to Exit\n");
 
+	lenv *e = lenv_new();
+	lenv_add_builtins(e);
+	
 	/* infinite loop */
 
 	while(1)
@@ -529,19 +640,11 @@ int main(int argc, char ** argv)
 		if(mpc_parse("<stdin>", input, Lispy, &r))
 		{	
 			
-			lval *x = lval_eval(lval_read(r.output));
+			lval *x = lval_eval(e, lval_read(r.output));
 			lval_println(x);
 			lval_del(x);
-			
-			/*
-			lval result = eval(r.output);
-			lval_println(result);
-			mpc_ast_delete(r.output);
-			
-			mpc_ast_t *result = r.output;
-			printf("%li\n",eval(result));
-			mpc_ast_delete(r.output);
-			*/
+		
+			mpc_ast_delete(r.output);	
 		} 
 		
 		else
@@ -551,12 +654,12 @@ int main(int argc, char ** argv)
 			mpc_err_print(r.error);
 			mpc_err_delete(r.error);
 		}
-			
-		
+				
 		/*Free memory created for input*/
 		free(input);
 	}
-	
+
+	lenv_del(e);	
 	/* Undefine and  Delete our PARSERS */
 	mpc_cleanup(6, Number, Symbol, Sexpr, Qexpr, Expr, Lispy);
 	return 0;

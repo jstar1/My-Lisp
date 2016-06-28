@@ -9,21 +9,34 @@
 #define LASSERT(args, cond, err) \
 	if (!(cond)) {lval_del(args); return lval_err(err);}
 
+/* Forward Declarations */
+struct lval;
+struct lenv;
+
+typedef struct lval lval;
+typedef struct lenv lenv;
+
 /* Create Enumeration of Possible lval Types */
-enum {LVAL_ERR,LVAL_NUM,LVAL_SYM,LVAL_SEXPR, LVAL_QEXPR};
+enum {LVAL_ERR, LVAL_NUM, LVAL_SYM, LVAL_FUN, LVAL_SEXPR, LVAL_QEXPR};
+
+/*Function pointer*/
+typedef lval* (*lbuiltin)(lenv*, lval*);
 
 /* Declare New lval struct */
 /* lval stands for Lisp Value */
-typedef struct lval{
+struct lval{
 	int type;
+	
 	long num;
 	/* Error and Symbol types have some string data */
 	char *err;
 	char *sym;
+	lbuiltin fun;
+	
 	/* Count and Pointer to a list of "lval*" */
 	int count;
-	struct lval **cell;
-} lval;
+	lval **cell;
+};
 
 /* Create Enumeration of Possible Error Types */
 //enum {LERR_DIV_ZERO, LERR_BAD_OP, LERR, LERR_BAD_NUM};
@@ -71,6 +84,15 @@ lval *lval_qexpr(void){
 	v -> cell = NULL;
 	return v;
 }
+
+/* A pointer to a new empty fun lval */
+lval *lval_fun(lbuiltin func){
+	
+	lval *v = malloc(sizeof(lval));
+	v -> type = LVAL_FUN;
+	v -> fun = func;
+	return v;
+}
 /* Function to free memory */
 void lval_del(lval *v){
 
@@ -81,7 +103,10 @@ void lval_del(lval *v){
 		
 		/* For Err or Sym free the string data */
 		case LVAL_ERR: free(v -> err); break;
+		
 		case LVAL_SYM: free(v -> sym); break;
+		
+		case LVAL_FUN: break;
 		
 		/* Qexpr then delete all the elements inside */
 		case LVAL_QEXPR:	       
@@ -175,8 +200,10 @@ void lval_print(lval *v){
 		case LVAL_SYM: printf("%s", v -> sym); break;
 		case LVAL_SEXPR: lval_expr_print(v, '(', ')'); break;
 		case LVAL_QEXPR: lval_expr_print(v, '{', '}'); break;
+		case LVAL_FUN:	printf("<function>"); break;
 	}
 }
+
 
 /* Print an "lval" followed by a newline */
 void lval_println(lval *v) {lval_print(v); putchar('\n');}
@@ -433,8 +460,7 @@ int main(int argc, char ** argv)
 	mpca_lang(MPCA_LANG_DEFAULT,
 	"								\
 	number	 : /-?[0-9]+/;						\
-	symbol 	 : \"list\" | \"head\" | \"tail\" 			\
-		 | \"join\" | \"eval\" | '+' | '-' | '*' | '/' | '%';	\
+	symbol 	 : /[a-zA-Z0-9_+\\-*\\/\\\\=<>!&]+/;			\
 	sexpr 	 : '(' <expr>* ')';					\
 	qexpr 	 : '{' <expr>* '}';					\
 	expr 	 : <number> | <symbol> | <sexpr> | <qexpr>;	 	\

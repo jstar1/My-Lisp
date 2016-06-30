@@ -293,8 +293,8 @@ void lval_print(lval *v){
 	      	        }
 			else
 			{
-				printf("(\\"); lval_print(v -> formals);
-				putchar(' '); lval_print(v -> body); putchar('(');
+				printf("(\\ "); lval_print(v -> formals);
+				putchar(' '); lval_print(v -> body); putchar(')');
 			}
 	}
 }
@@ -674,7 +674,7 @@ lval *builtin_var(lenv *e, lval *a, char *func){
 lval *builtin_add(lenv *e, lval *a){return builtin_op(e, a, "+");}
 lval *builtin_sub(lenv *e, lval *a){return builtin_op(e, a, "-");}
 lval *builtin_mul(lenv * e, lval *a){return builtin_op(e, a, "*");}
-lval *builtin_div(lenv * e, lval *a){return builtin_op(e, a , "/");}
+lval *builtin_div(lenv * e, lval *a){return builtin_op(e, a , "");}
 lval *builtin_def(lenv *e, lval *a){return builtin_var(e, a, "def");}
 lval *builtin_put(lenv *e, lval *a){return builtin_var (e, a, "=");}
 
@@ -687,6 +687,59 @@ void lenv_add_builtin(lenv *e, char *name, lbuiltin builtin){
 	lval_del(v);
 }
 
+lval *lval_call(lenv *e, lval *f, lval *a){
+	
+	/* If Builtin then simply apply that */
+	if (f -> builtin) {return f -> builtin(e, a);}
+
+	/* Record Argument Counts*/
+	int given = a -> count;
+	int total = f -> formals -> count;
+
+	/* While arguments still remain to be processed */
+	while (a -> count)
+	{
+		/* If were ran out of formal arguments to bind */
+		if (f -> formals -> count == 0)
+		{
+			lval_del(a); return lval_err(
+			"Function passed too many arguments."
+			"GOt %i, Expected %i.", given, total);
+		}
+	
+
+		/* Pop the first s ymbol from the formals */
+		lval *sym = lval_pop(f -> formals, 0);
+
+		/* POp the next argument from the list */
+		lval *val = lval_pop(a, 0);
+
+		/* Bind a copy into t he functions environment */
+		lenv_put(f -> env, sym, val);
+
+		/* Delete symbol and value */
+		lval_del(sym); lval_del(val);
+	}
+
+	/* Argument list is now bound so can be cleaned up*/
+	lval_del(a);
+
+	/*If a ll formals h ave been bound evaluate */
+	if (f -> formals -> count ==0)
+	{
+		/* Set environment parent to evaluation environment */
+		f -> env -> par = e;
+
+		/* Evaluate and return */
+		return builtin_eval( f-> env, lval_add(lval_sexpr(), lval_copy(f -> body)));
+	}
+	else
+	{
+		/* Otherwise return partially evaluated function */
+		return lval_copy(f);
+	}
+
+}
 
 /*Function checks for error conditions then perofrms command and returns a value*/
 /*lval *builtin_def(lenv *e, lval *a){
@@ -721,8 +774,8 @@ void lenv_add_builtin(lenv *e, char *name, lbuiltin builtin){
 lval *builtin_lambda(lenv *e, lval *a){
 	/* Check Two arguments, each of which are Q-Expressions */
 	LASSERT_NUM("\\", a, 2);
-	LASSERT_TYPE("\\",a, 0, LVAL_QEXPR);
-	LASSERT_TYPE("\\",a, 1, LVAL_QEXPR);
+	LASSERT_TYPE("\\", a, 0, LVAL_QEXPR);
+	LASSERT_TYPE("\\", a, 1, LVAL_QEXPR);
 
 	/* Check first Q-Expression contains only Symbols */
 	for (int i = 0; i < a -> cell[0] -> count; ++i)
@@ -749,6 +802,7 @@ void lenv_add_builtins(lenv *e){
 	lenv_add_builtin(e, "eval", builtin_eval);
 	lenv_add_builtin(e, "join", builtin_join);
 	lenv_add_builtin(e, "def", builtin_def);
+	lenv_add_builtin(e, "\\", builtin_lambda);	
 	
 	/* Mathematical Functions */
 	lenv_add_builtin(e, "+", builtin_add);
@@ -788,11 +842,15 @@ lval *lval_eval_sexpr(lenv *e,lval *v){
 	{
 		lval_del(f);
 		lval_del(v);
-		return lval_err("first element is not a builtintion");
+		lval *err = lval_err( "S-Expression starts with incorrect type." "Got %s, Expected %s.",
+		ltype_name(f -> type), ltype_name(LVAL_FUN));
+		lval_del(f);
+		lval_del(v);
+		return err;
 	}
-
+	
  	/* If so call builtin to get result */
-	lval *result = f -> builtin(e, v);
+	lval *result = lval_call(e, f, v);
 	lval_del(f);
 	return result;
 }
